@@ -699,6 +699,24 @@ class Scan2023(Scan5Point3):
             secondary_z = None
         return secondary_z
 
+    @property
+    def num_requested_frames(self):
+        if self.is_slow_stack:
+            match = re.search(r'hStackManager\.framesPerSlice = (?P<num_frames>.*)',
+                              self.header)
+            num_requested_frames = int(1e9 if match.group('num_frames')=='Inf' else
+                                       float(match.group('num_frames'))) if match else None
+        else:
+            match = re.search(r'hStackManager\.numFramesPerVolume = (?P<num_frames>.*)', self.header)
+            num_frames_perVolume = int(1e9 if match.group('num_frames')=='Inf' else
+                                       float(match.group('num_frames'))) if match else None
+
+            match = re.search(r'hStackManager\.numVolumes = (?P<num_frames>.*)', self.header)
+            num_Volume = int(1e9 if match.group('num_frames')=='Inf' else
+                                       float(match.group('num_frames'))) if match else None
+            num_requested_frames = num_frames_perVolume * num_Volume 
+            
+        return num_requested_frames
 
 class ScanMultiROI(NewerScan, BaseScan):
     """An extension of ScanImage v5 that manages multiROI data (output from mesoscope).
