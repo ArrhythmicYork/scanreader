@@ -139,6 +139,34 @@ class BaseScan():
         return self.requested_scanning_depths[:self.num_scanning_depths]
 
     @property
+    def num_discard_flyback_frames(self):
+        """ Frames acquired per volume while the z actuator returns to the first depth.
+
+        With a piezo (or any fastZ actuator using a 'step'/sawtooth waveform) the scanner
+        keeps acquiring while the actuator flies back to the top of the stack. ScanImage
+        discards these frames when it reconstructs the volume, but they are still written
+        to the tiff and they still emit a frame clock pulse, so they occupy page slots
+        that must be skipped when indexing.
+
+        Returns 0 for slow stacks and for scans without fastZ.
+        """
+        if self.is_slow_stack:
+            return 0
+        match = re.search(r'hFastZ\.numDiscardFlybackFrames = (?P<num_discard>.*)',
+                          self.header)
+        return int(float(match.group('num_discard'))) if match else 0
+
+    @property
+    def _num_page_slots(self):
+        """ Page slots per frame per channel: kept depths plus discarded flyback frames.
+
+        This is the stride through the tiff, whereas num_scanning_depths is the number of
+        depths the user actually gets back. They differ only when flyback frames are
+        written to the file.
+        """
+        return self.num_scanning_depths + self.num_discard_flyback_frames
+
+    @property
     def num_requested_frames(self):
         if self.is_slow_stack:
              match = re.search(r'hStackManager\.framesPerSlice = (?P<num_frames>.*)',
@@ -156,7 +184,7 @@ class BaseScan():
             num_frames = min(self.num_requested_frames / self._num_averaged_frames,
                              self._num_pages / self.num_channels) # finished in the first slice
         else:
-            num_frames = self._num_pages / (self.num_channels * self.num_scanning_depths)
+            num_frames = self._num_pages / (self.num_channels * self._num_page_slots)
         num_frames = int(num_frames) # discard last frame if incomplete
         return num_frames
 
@@ -384,7 +412,7 @@ class BaseScan():
             slice_step = self.num_channels * self.num_frames
         else:
             slice_step = self.num_channels
-            frame_step = self.num_channels * self.num_scanning_depths
+            frame_step = self.num_channels * self._num_page_slots
         pages_to_read = []
         for frame in frame_list:
             for slice_ in slice_list:
